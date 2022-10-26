@@ -13,40 +13,37 @@ export function execute(expression: Expression): number {
             return resultsTable.valueAt(0);
         }
 
-        executeOperation(op);
+        const result = computeResult(op);
+        const indexes = getIndexes(op);
+
+        resultsTable.redirectIndexesTo(indexes, result);
     }
 
-    function executeOperation(op: Operation) {
+    function computeResult(op: Operation) {
         const a = resultsTable.valueAt(op.aIndex);
-        const b = resultsTable.valueAt(op.bIndex);
 
-        let result: number;
-
-        switch (op.operator) {
-            case '+':
-                result = a + b;
-                break;
-
-            case '-':
-                result = a - b;
-                break;
-
-            case '*':
-                result = a * b;
-                break;
-
-            case '/':
-                result = a / b;
-                break;
-
-            case '^':
-                result = Math.pow(a, b);
-                break;
+        if (op.type === 'unary') {
+            switch (op.operator) {
+                case '+': return a;
+                case '-': return -a;
+            }
         }
 
-        resultsTable.redirectIndexesTo(
-            [op.aIndex, op.bIndex],
-            result
-        );
+        const b = resultsTable.valueAt(op.bIndex);
+
+        switch (op.operator) {
+            case '+': return a + b;
+            case '-': return a - b;
+            case '*': return a * b;
+            case '/': return a / b;
+            case '^': return Math.pow(a, b);
+        }
+    }
+
+    function getIndexes(op: Operation) {
+        switch (op.type) {
+            case 'unary': return [op.aIndex];
+            case 'binary': return [op.aIndex, op.bIndex];
+        }
     }
 }

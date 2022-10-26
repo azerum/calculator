@@ -1,3 +1,10 @@
-import { evalAndPrint } from './eval-and-print';
+import { scan } from './parsing';
 
-evalAndPrint('1 + 2 * (3 + 4)');
+const s = '1 + +1 + (1 + 1 + +1 - -1 ^ 2)';
+
+try {
+    console.dir(scan(s));
+}
+catch (e) {
+    console.log(e.message);
+}

@@ -1,26 +1,72 @@
 import { Operand, OperandsTable } from './operands-table';
 import { Expression, Operation, OperationsQueue } from "./operations-queue";
 
-export type Token = number | BinaryOperatorToken;
-export type BinaryOperatorToken = '+' | '-' | '*' | '/' | '^';
+export type Token = number | Operator;
+export type Operator = UnaryOperatorToken | BinaryOperatorToken;
+
+const unaryOperators = ['+', '-'] as const;
+const binaryOperators = ['+', '-', '*', '/', '^'] as const;
+
+function isIn<T extends readonly unknown[]>(values: T, x: any): x is T[number] {
+    return values.includes(x);
+}
+
+export type BinaryOperatorToken = (typeof binaryOperators)[number];
+export type UnaryOperatorToken = (typeof unaryOperators)[number];
 
 export type TokenTree = (Token | TokenTree)[];
 
-/**
- * Scans tokens from string `s`. Returns a nested array (tree) in form
- * `T = [number, BinaryOperatorToken, T, BinaryOperatorToken, number...]`
- * 
- * That is, first token is always a number or a subexpression, second token
- * is always a binary operator token, third token is always a number or a
- * subexpression, fourth token is always binary operator token and so on
- */
-export function scan(s: string): TokenTree {
-    let current: TokenTree = [];
-    const previousStack: TokenTree[] = [];
+type State = {
+    type: 'none'
+} | {
+    type: 'inNumber',
+    numberStart: number,
+    hadDecimalPoint: boolean,
+    wasInUnary: boolean
+} | {
+    type: 'afterNumber'
+} | {
+    type: 'inBinary'
+} | {
+    type: 'inUnary'
+};
 
-    let lastNumberStart: number | null = null;
-    let hadDecimalPoint = false;
-    let inBinaryOperator = false;
+class TokensStack {
+    private _current: TokenTree = [];
+    private previousStack: TokenTree[] = [];
+
+    get isInSubexpression() {
+        return this.previousStack.length > 0;
+    }
+
+    get subexpressionDepth() {
+        return this.previousStack.length;
+    }
+
+    get current(): TokenTree {
+        return this._current;
+    }
+
+    enterSubexpression() {
+        this.previousStack.push(this._current);
+        this._current = [];
+    }
+
+    exitSubexpression() {
+        if (!this.isInSubexpression) {
+            throw new Error('Not in subexpression');
+        }
+
+        const parent = this.previousStack.pop()!;
+
+        parent.push(this._current);
+        this._current = parent;
+    }
+}
+
+export function scan(s: string): TokenTree {
+    const stack = new TokensStack();
+    let state: State = { type: 'none' };
 
     for (let i = 0; i < s.length; ++i) {
         const c = s.charAt(i);
@@ -29,102 +75,123 @@ export function scan(s: string): TokenTree {
             continue;
         }
 
-        if (c >= '0' && c <= '9') {
-            if (lastNumberStart === null) {
-                lastNumberStart = i;
-            }
-
+        if (c >= '0' && c <= '9' || c === '.') {
+            onReadDigitOnDot(i, c);
             continue;
         }
 
-        if (c === '.') {
-            if (hadDecimalPoint) {
-                throwError(i, 'double decimal point is not allowed');
-            }
+        exitNumberIfInIt(i);
 
-            hadDecimalPoint = true;
-
-            if (lastNumberStart === null) {
-                lastNumberStart = i;
-            }
-
-            continue;
-        }
-
-        endNumberIfAny(i);
-
+        //Handle parantheses first
         if (c === '(') {
-            previousStack.push(current);
-            current = [];
-
+            stack.enterSubexpression();
             continue;
         }
 
         if (c === ')') {
-            const parent = previousStack.pop();
-
-            if (parent === undefined) {
+            if (!stack.isInSubexpression) {
                 throwError(i, 'unmatched closing parenthesis');
             }
 
-            parent.push(current);
-            current = parent;
-
+            stack.exitSubexpression();
             continue;
         }
 
-        switch (c) {
-            case '+':
-            case '-':
-            case '*':
-            case '/':
-            case '^':
-                if (current.length === 0) {
-                    throwError(
-                        i, 
-                        'expression cannot start with an operation\n' + 
-                        '(unary operations are not supported)'
-                    );
-                }
+        if (c === ',') {
+            throwError(i, "use '.' instead of ','");
+        }
 
-                if (inBinaryOperator) {
-                    throwError(i, 'expected value');
-                }
+        onReadOther(i, c);
+    }
 
-                inBinaryOperator = true;
-                current.push(c);
+    exitNumberIfInIt(s.length);
+
+    if (stack.isInSubexpression) {
+        throwError(s.length, `unmatched opening parenthesis: ${stack.subexpressionDepth}`);
+    }
+
+    return stack.current;
+
+
+    function onReadDigitOnDot(i: number, c: string) {
+        switch (state.type) {
+            case 'none':
+            case 'inBinary':
+            case 'inUnary':
+            case 'inNumber':
                 break;
 
-            case ',':
-                throwError(i, "use '.' instead of ','");
+            default: 
+                throwError(i, 'expected operator');
+        }
 
-            default:
-                throwError(i, `unknown character ${c}`);
+        if (state.type === 'inNumber') {
+            if (c === '.') {
+                if (state.hadDecimalPoint) {
+                    throwError(i, 'double decimal point is not allowed');
+                }
+
+                state.hadDecimalPoint = true;
+            }
+        }
+        else {
+            state = {
+                type: 'inNumber',
+                numberStart: i,
+
+                hadDecimalPoint: c === '.',
+                wasInUnary: state.type === 'inUnary'
+            };
         }
     }
 
-    endNumberIfAny(s.length);
+    function exitNumberIfInIt(i: number) {
+        if (state.type !== 'inNumber') {
+            return;
+        }
 
-    if (inBinaryOperator) {
-        throwError(s.length, 'expected value');
+        const token = s.slice(state.numberStart, i);
+        const n = Number(token);
+
+        stack.current.push(n);
+
+        if (state.wasInUnary) {
+            stack.exitSubexpression();
+        }
+
+        state = {
+            type: 'afterNumber'
+        };
     }
 
-    if (previousStack.length > 0) {
-        throwError(s.length, `unmatched opening parenthesis: ${previousStack.length}`);
-    }
+    function onReadOther(i: number, c: string) {
+        switch (state.type) {
+            case 'none':
+            case 'inBinary':
+                if (!isIn(unaryOperators, c)) {
+                    throwError(i, 'expected unary operator');
+                }
 
-    return current;
+                stack.enterSubexpression();
+                stack.current.push(c);
 
-    function endNumberIfAny(i: number) {
-        if (lastNumberStart !== null) {
-            const token = s.slice(lastNumberStart, i);
-            const n = Number(token);
+                state = {
+                    type: 'inUnary'
+                };
 
-            current.push(n);
+                break;
 
-            lastNumberStart = null;
-            hadDecimalPoint = false;
-            inBinaryOperator = false;
+            case 'afterNumber':
+                if (!isIn(binaryOperators, c)) {
+                    throwError(i, 'expected binary operator');
+                }
+
+                stack.current.push(c);
+
+                state = {
+                    type: 'inBinary'
+                };
+                break;
         }
     }
 
@@ -146,7 +213,22 @@ export function parse(tokens: TokenTree): Expression {
     const operationsQueue = new OperationsQueue();
     const operandsTable = new OperandsTable();
 
-    const a = toOperand(tokens[0]);
+    const first = tokens[0];
+
+    if (isIn(unaryOperators, first)) {
+        const a = toOperand(tokens[1]);
+        
+        const op: Operation = {
+            type: 'unary',
+            operator: first,
+            aIndex: operandsTable.push(a)
+        };
+
+        operationsQueue.enqueue(op);
+        return [operationsQueue, operandsTable];
+    }
+
+    const a = toOperand(first);
     let aIndex = operandsTable.push(a);
 
     for (let i = 1; i < tokens.length; i += 2) {
@@ -155,23 +237,24 @@ export function parse(tokens: TokenTree): Expression {
         const b = toOperand(tokens[i + 1]);
         const bIndex = operandsTable.push(b);
 
-        const op: Operation = { 
+        const op: Operation = {
+            type: 'binary',
+            operator,
             aIndex,
-            bIndex,
-            operator
+            bIndex
         };
-
+    
         operationsQueue.enqueue(op);
         aIndex = bIndex;
     }
 
-    function toOperand(t: Token | TokenTree): Operand {
-        if (Array.isArray(t)) {
-            return parse(t);
-        }
+    return [operationsQueue, operandsTable];
+}
 
-        return t as number;
+function toOperand(t: Token | TokenTree): Operand {
+    if (Array.isArray(t)) {
+        return parse(t);
     }
 
-    return [operationsQueue, operandsTable];
+    return t as number;
 }

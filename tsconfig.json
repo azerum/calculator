@@ -4,6 +4,8 @@
         "outDir": "out",
         "moduleResolution": "node",
         "module": "commonjs",
-        "sourceMap": true
+        "sourceMap": true,
+
+        "target": "ES6"
     }
 }

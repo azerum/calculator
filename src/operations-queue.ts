@@ -1,9 +1,18 @@
 import { OperandsTable } from './operands-table';
-import { BinaryOperatorToken } from "./parsing";
+import { BinaryOperatorToken, UnaryOperatorToken } from "./parsing";
 
 export type Expression = [OperationsQueue, OperandsTable];
 
-export interface Operation {
+export type Operation = UnaryOperation | BinaryOperation;
+
+interface UnaryOperation {
+    type: 'unary';
+    operator: UnaryOperatorToken;
+    aIndex: number;
+}
+
+interface BinaryOperation {
+    type: 'binary';
     operator: BinaryOperatorToken;
     aIndex: number;
     bIndex: number;
@@ -25,7 +34,7 @@ const priorityTable: PriorityTable = {
     '*': 1,
     '/': 1,
     '^': 2
-};
+} as const;
 
 export class OperationsQueue {
     private items: OperationWrapper[] = [];
