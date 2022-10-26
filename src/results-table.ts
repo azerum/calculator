@@ -4,17 +4,14 @@ interface Redirect {
 
 type Entry = number | Redirect;
 
-export class ValuesTable {
-    private entries: Entry[] = [];
+export class ResultsTable {
+    private entries: Entry[];
 
-    push(value: number): number {
-        const newLength = this.entries.push(value);
-
-        //Index of `value` is new length - 1
-        return newLength - 1;
+    constructor(values: number[]) {
+        this.entries = values;
     }
 
-    valueAt(index: number) {
+    valueAt(index: number): number {
         const e = this.entries[index];
 
         if (typeof e === 'number') {

@@ -1,9 +1,12 @@
+import { OperandsTable } from './operands-table';
 import { BinaryOperatorToken } from "./parsing";
+
+export type Expression = [OperationsQueue, OperandsTable];
 
 export interface Operation {
     operator: BinaryOperatorToken;
-    valueAIndex: number;
-    valueBIndex: number;
+    aIndex: number;
+    bIndex: number;
 }
 
 interface OperationWrapper {

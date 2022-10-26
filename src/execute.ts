@@ -1,25 +1,24 @@
-import { Operation, OperationsQueue } from "./operations-queue";
-import { ValuesTable } from "./values-table";
+import { Expression, Operation } from "./operations-queue";
 
-export function execute(
-    operationsQueue: OperationsQueue, 
-    valuesTable: ValuesTable
-): number {
+export function execute(expression: Expression): number {
+    const [operationsQueue, operandsTable] = expression;
+    const resultsTable = operandsTable.toResultsTable(execute);
+
     operationsQueue.sortByPriorityAndOrder();
 
     while (true) {
         const op = operationsQueue.dequeue();
 
         if (op === undefined) {
-            return valuesTable.valueAt(0);
+            return resultsTable.valueAt(0);
         }
 
         executeOperation(op);
     }
 
     function executeOperation(op: Operation) {
-        const a = valuesTable.valueAt(op.valueAIndex);
-        const b = valuesTable.valueAt(op.valueBIndex);
+        const a = resultsTable.valueAt(op.aIndex);
+        const b = resultsTable.valueAt(op.bIndex);
 
         let result: number;
 
@@ -45,8 +44,8 @@ export function execute(
                 break;
         }
 
-        valuesTable.redirectIndexesTo(
-            [op.valueAIndex, op.valueBIndex], 
+        resultsTable.redirectIndexesTo(
+            [op.aIndex, op.bIndex],
             result
         );
     }

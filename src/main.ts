@@ -1,8 +1,6 @@
-import exp = require('constants');
 import path = require('path');
 import readline = require('readline');
-import { execute } from './execute';
-import { scan, parse } from './parsing';
+import { evalAndPrint } from './eval-and-print';
 
 const expression = process.argv[2];
 
@@ -31,18 +29,3 @@ const loop = () => {
 };
 
 loop();
-
-function evalAndPrint(expression: string): boolean {
-    try {
-        const tokens = scan(expression);
-        const [operationsQueue, valuesTable] = parse(tokens);
-        const result = execute(operationsQueue, valuesTable);
-        
-        console.log(result);
-        return true;
-    }
-    catch (e) {
-        console.log(e instanceof Error ? e.message : e);
-        return false;
-    }
-}

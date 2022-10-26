@@ -1,18 +1,26 @@
-import { Operation, OperationsQueue } from "./operations-queue";
-import { ValuesTable } from "./values-table";
+import { Operand, OperandsTable } from './operands-table';
+import { Expression, Operation, OperationsQueue } from "./operations-queue";
 
 export type Token = number | BinaryOperatorToken;
 export type BinaryOperatorToken = '+' | '-' | '*' | '/' | '^';
 
+export type TokenTree = (Token | TokenTree)[];
+
 /**
- * Scans tokens from string `s`. Resulting array is guranteed to be in the form
- * `[number, BinaryOperatorToken, number, BinaryOperatorToken, number...]`
+ * Scans tokens from string `s`. Returns a nested array (tree) in form
+ * `T = [number, BinaryOperatorToken, T, BinaryOperatorToken, number...]`
+ * 
+ * That is, first token is always a number or a subexpression, second token
+ * is always a binary operator token, third token is always a number or a
+ * subexpression, fourth token is always binary operator token and so on
  */
-export function scan(s: string): Token[] {
-    const results: Token[] = [];
+export function scan(s: string): TokenTree {
+    let current: TokenTree = [];
+    const previousStack: TokenTree[] = [];
 
     let lastNumberStart: number | null = null;
     let hadDecimalPoint = false;
+    let inBinaryOperator = false;
 
     for (let i = 0; i < s.length; ++i) {
         const c = s.charAt(i);
@@ -45,13 +53,33 @@ export function scan(s: string): Token[] {
 
         endNumberIfAny(i);
 
+        if (c === '(') {
+            previousStack.push(current);
+            current = [];
+
+            continue;
+        }
+
+        if (c === ')') {
+            const parent = previousStack.pop();
+
+            if (parent === undefined) {
+                throwError(i, 'unmatched closing parenthesis');
+            }
+
+            parent.push(current);
+            current = parent;
+
+            continue;
+        }
+
         switch (c) {
             case '+':
             case '-':
             case '*':
             case '/':
             case '^':
-                if (results.length === 0) {
+                if (current.length === 0) {
                     throwError(
                         i, 
                         'expression cannot start with an operation\n' + 
@@ -59,7 +87,12 @@ export function scan(s: string): Token[] {
                     );
                 }
 
-                results.push(c);
+                if (inBinaryOperator) {
+                    throwError(i, 'expected value');
+                }
+
+                inBinaryOperator = true;
+                current.push(c);
                 break;
 
             case ',':
@@ -72,17 +105,26 @@ export function scan(s: string): Token[] {
 
     endNumberIfAny(s.length);
 
-    return results;
+    if (inBinaryOperator) {
+        throwError(s.length, 'expected value');
+    }
+
+    if (previousStack.length > 0) {
+        throwError(s.length, `unmatched opening parenthesis: ${previousStack.length}`);
+    }
+
+    return current;
 
     function endNumberIfAny(i: number) {
         if (lastNumberStart !== null) {
             const token = s.slice(lastNumberStart, i);
             const n = Number(token);
 
-            results.push(n);
+            current.push(n);
 
             lastNumberStart = null;
             hadDecimalPoint = false;
+            inBinaryOperator = false;
         }
     }
 
@@ -96,33 +138,40 @@ export function scan(s: string): Token[] {
     }
 }
 
-export function parse(tokens: Token[]): [OperationsQueue, ValuesTable] {
-    const operationsQueue = new OperationsQueue();
-    const valuesTable = new ValuesTable();
-
+export function parse(tokens: TokenTree): Expression {
     if (tokens.length === 0) {
-        return [operationsQueue, valuesTable];   
+        throw new Error('Should not happen: parse() got empty tokens array');
     }
 
-    const a = tokens[0] as number;
-    let aIndex = valuesTable.push(a);
+    const operationsQueue = new OperationsQueue();
+    const operandsTable = new OperandsTable();
+
+    const a = toOperand(tokens[0]);
+    let aIndex = operandsTable.push(a);
 
     for (let i = 1; i < tokens.length; i += 2) {
         const operator = tokens[i] as BinaryOperatorToken;
-        const b = tokens[i + 1] as number;
 
-        const bIndex = valuesTable.push(b);
+        const b = toOperand(tokens[i + 1]);
+        const bIndex = operandsTable.push(b);
 
-        const op: Operation = {
-            valueAIndex: aIndex,
-            valueBIndex: bIndex,
+        const op: Operation = { 
+            aIndex,
+            bIndex,
             operator
         };
 
         operationsQueue.enqueue(op);
-
         aIndex = bIndex;
     }
 
-    return [operationsQueue, valuesTable];
+    function toOperand(t: Token | TokenTree): Operand {
+        if (Array.isArray(t)) {
+            return parse(t);
+        }
+
+        return t as number;
+    }
+
+    return [operationsQueue, operandsTable];
 }
